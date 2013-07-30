@@ -93,7 +93,7 @@ class SnapHandler(SimpleHTTPRequestHandler):
             except TypeError, e:
                 for param in inspect.getargspec(f).args:
                     if param not in params:
-                        response = "Missing argument %r" % param
+                        response = "ERROR: Missing argument %r" % param
                         return (400, mime_type, response)
                 else:
                     raise
