@@ -38,6 +38,8 @@ class SnapHandler(SimpleHTTPRequestHandler):
     def prettify_arg(cls, value):
         value = value.decode('utf-8')
         value = cls.special.get(value, value)
+        if isinstance(value, bool):
+            return value
         try:
             return int(value)
         except ValueError:
@@ -86,7 +88,12 @@ class SnapHandler(SimpleHTTPRequestHandler):
             f = self.routes[path]
             try:
                 response = f(**params)
-                response = "" if response is None else response
+                if response is None:
+                    response = ""
+                elif response is True:
+                    response = "true"
+                elif response is False:
+                    response = "false"
                 return (200, mime_type, response)
             except KeyboardInterrupt:
                 raise
