@@ -4,10 +4,14 @@
 
 See example.py for usage.
 
+Handler functions should return unicode. Non-unicode strings are assumed to
+be UTF-8 encoded.
+
 """
 
-__version__ = '0.1.3'
+__version__ = '0.1.4'
 
+import inspect
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -25,12 +29,17 @@ class SnapHandler(SimpleHTTPRequestHandler):
 
     special = {
         'true': True,
+        'True': True,
         'false': False,
+        'False': False,
     }
 
     @classmethod
     def prettify_arg(cls, value):
+        value = value.decode('utf-8')
         value = cls.special.get(value, value)
+        if isinstance(value, bool):
+            return value
         try:
             return int(value)
         except ValueError:
@@ -42,26 +51,83 @@ class SnapHandler(SimpleHTTPRequestHandler):
     def send_head(self):
         split_url = urlsplit(self.path)
         path = split_url.path
-        args = parse_qs(split_url.query)
-        args = dict((k, self.prettify_arg(v[0])) for (k, v) in args.items())
-        print 'args', args
+        params = parse_qs(split_url.query)
+        params = dict((k, self.prettify_arg(v[0])) for (k, v) in params.items())
+        print 'params', params
+        is_browser = "text/html" in self.headers['Accept']
 
+        (status, mime_type, response) = self.get_response(path, params,
+                                                          is_browser)
+        if isinstance(response, str):
+            response = response.decode('utf-8')
+        else:
+            response = unicode(response)
+
+        if is_browser and mime_type == "text/plain":
+            mime_type = "text/html"
+            response = u"""<!DOCTYPE html>
+            <meta charset="utf8">
+            <title>{title}</title>
+            <pre>{response}</pre>
+            """.format(title=path, response=response)
+
+        if isinstance(response, unicode):
+            response = response.encode('utf-8')
+
+        self.send_response(status)
+        self.send_header("Content-Type", mime_type)
+        self.send_header("Content-Length", str(len(response)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+        return StringIO(response)
+
+    def get_response(self, path, params, is_browser):
+        mime_type = "text/plain"
         if path in self.routes:
             f = self.routes[path]
-            response = f(**args)
-            response = "" if response is None else unicode(response)
-
-            self.send_response(200)
-            self.send_header("Content-Type", self.guess_type(path))
-            self.send_header("Content-Length", str(len(response)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-
-            return StringIO(response)
+            try:
+                response = f(**params)
+                if response is None:
+                    response = ""
+                elif response is True:
+                    response = "true"
+                elif response is False:
+                    response = "false"
+                return (200, mime_type, response)
+            except KeyboardInterrupt:
+                raise
+            except TypeError, e:
+                for param in inspect.getargspec(f).args:
+                    if param not in params:
+                        response = "ERROR: Missing argument %r" % param
+                        return (400, mime_type, response)
+                else:
+                    raise
         elif path == '/':
-            return StringIO(self.index())
+            return self.index(is_browser)
         else:
-            self.send_error(404, "Path not found")
+            return (404, mime_type, "ERROR: Route not found")
+
+    def index(self, is_browser):
+        """Return the list of routes in plain text format."""
+        if is_browser:
+            html = u"""<!DOCTYPE html>
+            <meta charset="utf8">
+            <title>/</title>
+            <ul>
+            """
+            for path in sorted(self.routes):
+                f = self.routes[path]
+                params = inspect.getargspec(f).args
+                qs = "&".join("%s=" % p for p in params)
+                if qs:
+                    path += "?" + qs
+                html += u'<li><a href="{path}">{path}</a>'.format(path=path)
+            return (200, "text/html", html)
+        else:
+            response = "\n".join(sorted(self.routes))
+            return (200, "text/plain", response)
 
     @classmethod
     def add_route(self, path, f):
@@ -88,10 +154,6 @@ class SnapHandler(SimpleHTTPRequestHandler):
             self.add_route(path, f, **options)
             return f
         return decorator
-
-    def index(self, path):
-        """Return the list of routes in plain text format."""
-        return "\n".join(sorted(self.routes))
 
 
 class Server(TCPServer):
