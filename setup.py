@@ -7,7 +7,7 @@ version = re.search("__version__ = '([^']+)'",
 
 
 setup(name = 'snapext',
-      version = version,
+      version = "0.1.5",
       author = 'Conor Hudson, Tim Radvan',
       author_email = '',
       url = 'https://github.com/technoboy10/snapext',

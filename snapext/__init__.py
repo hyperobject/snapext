@@ -106,6 +106,13 @@ class SnapHandler(SimpleHTTPRequestHandler):
                     raise
         elif path == '/':
             return self.index(is_browser)
+	elif path == '/crossdomain.xml':
+	    return """
+<?xml version="1.0"?>
+<cross-domain-policy>
+    <allow-access-from domain="*" to-ports="*"/>
+</cross-domain-policy>
+	    """
         else:
             return (404, mime_type, "ERROR: Route not found")
 
