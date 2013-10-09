@@ -20,6 +20,12 @@ from urlparse import urlsplit, parse_qs
 from SimpleHTTPServer import SimpleHTTPRequestHandler
 from SocketServer import TCPServer
 
+CROSSDOMAIN_XML = """
+<?xml version="1.0"?>
+<cross-domain-policy>
+    <allow-access-from domain="*" to-ports="*"/>
+</cross-domain-policy>
+"""
 
 
 class SnapHandler(SimpleHTTPRequestHandler):
@@ -53,7 +59,7 @@ class SnapHandler(SimpleHTTPRequestHandler):
         path = split_url.path
         params = parse_qs(split_url.query)
         params = dict((k, self.prettify_arg(v[0])) for (k, v) in params.items())
-        print 'params', params
+        self.log_message("params: %s", params)
         is_browser = "text/html" in self.headers['Accept']
 
         (status, mime_type, response) = self.get_response(path, params,
@@ -82,9 +88,16 @@ class SnapHandler(SimpleHTTPRequestHandler):
 
         return StringIO(response)
 
-    def get_response(self, path, params, is_browser):
-        mime_type = "text/plain"
+    def get_route(self, path):
         if path in self.routes:
+            return (self.routes[path], [])
+        #for route in self.routes:
+        #    if route.startswith(path):
+        #        return (route, os.path.split(route.asdf))
+
+    def get_response(self, path, params, is_browser):
+        if path in self.routes:
+            mime_type = "text/plain"
             f = self.routes[path]
             try:
                 response = f(**params)
@@ -106,15 +119,12 @@ class SnapHandler(SimpleHTTPRequestHandler):
                     raise
         elif path == '/':
             return self.index(is_browser)
-	elif path == '/crossdomain.xml':
-	    return """
-<?xml version="1.0"?>
-<cross-domain-policy>
-    <allow-access-from domain="*" to-ports="*"/>
-</cross-domain-policy>
-	    """
+        elif path == '/crossdomain.xml':
+            return (200, "application/xml", CROSSDOMAIN_XML)
+        elif path == '/poll':
+            return (200, "text/plain", "hi")
         else:
-            return (404, mime_type, "ERROR: Route not found")
+            return (404, "text/plain", "ERROR: Route not found")
 
     def index(self, is_browser):
         """Return the list of routes in plain text format."""
@@ -162,6 +172,13 @@ class SnapHandler(SimpleHTTPRequestHandler):
             return f
         return decorator
 
+    def log_message(self, format, *args):
+        if format == "params: %s" and not args[0]:
+            return
+        if isinstance(args[0], str) and args[0].startswith("GET /poll"):
+            return
+        return SimpleHTTPRequestHandler.log_message(self, format, *args)
+
 
 class Server(TCPServer):
     allow_reuse_address = True
@@ -172,6 +189,6 @@ def main(handler, port, silent=False):
     httpd = Server(("", port), handler)
     if not silent:
         print "Serving at port %i" % port
-        print "Go ahead and launch Snap!"
+        print "Go ahead and launch Snap/Scratch!"
     httpd.serve_forever()
 
